@@ -2,10 +2,17 @@ const { Pool } = require('pg');
 const express = require('express');
 require('dotenv').config();
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Log DATABASE_URL to ensure it is correctly loaded
+console.log("DATABASE_URL:", process.env.DATABASE_URL);
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// Connect to PostgreSQL and handle any connection errors
 pool.connect((err, client, done) => {
   if (err) {
     console.error('Connection error', err.stack);
@@ -15,10 +22,7 @@ pool.connect((err, client, done) => {
   }
 });
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Endpoint kiểm tra kết nối và hiển thị thời gian hiện tại từ PostgreSQL
+// Endpoint to test database connection and show current time
 app.get('/test-db', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW()');
@@ -28,7 +32,7 @@ app.get('/test-db', async (req, res) => {
   }
 });
 
-// Endpoint hiển thị dữ liệu từ bảng `admin`
+// Endpoint to fetch and display data from the 'admin' table
 app.get('/admin', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM admin');
@@ -38,6 +42,7 @@ app.get('/admin', async (req, res) => {
   }
 });
 
+// Start the server and listen on the specified port
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
