@@ -1,19 +1,33 @@
-require('dotenv').config();
-const express = require('express');
 const { Pool } = require('pg');
-
-const app = express();
+const express = require('express');
+require('dotenv').config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
+});
+
+pool.connect((err, client, done) => {
+  if (err) {
+    console.error('Connection error', err.stack);
+  } else {
+    console.log('Connected to PostgreSQL');
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/test-db', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT NOW()');
+    res.status(200).json({ status: 'success', data: result.rows });
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+module.exports = pool;
