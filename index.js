@@ -1,129 +1,91 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs'); // Thay đổi từ 'bcrypt' sang 'bcryptjs'
-const cors = require('cors');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const app = express();
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
 });
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
 
-app.use(cors());
-app.use(bodyParser.json());
+const secret = 'your_jwt_secret'; // Thay đổi thành một chuỗi bí mật
 
-pool.connect((err, client, done) => {
-  if (err) {
-    console.error('Connection error', err.stack);
-  } else {
-    console.log('Connected to PostgreSQL');
-  }
-});
-
-// Route để đăng ký
-app.post('/register', async (req, res) => {
-  const { admin_name, admin_email, admin_pwd } = req.body;
-  const hashedPassword = await bcrypt.hash(admin_pwd, 10); // bcryptjs cũng hỗ trợ hàm hash
-
+// Đăng ký
+app.post('/api/signup', async (req, res) => {
+  const { name, email, password } = req.body;
   try {
+    const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
       'INSERT INTO admin (admin_name, admin_email, admin_pwd) VALUES ($1, $2, $3) RETURNING *',
-      [admin_name, admin_email, hashedPassword]
+      [name, email, hashedPassword]
     );
-    res.status(201).json({ status: 'success', data: result.rows[0] });
-  } catch (err) {
-    console.error('Error during registration:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
+    res.status(201).json({ success: true, user: result.rows[0] });
+  } catch (error) {
+    console.error('Error signing up:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
-// Route để đăng nhập
-app.post('/login', async (req, res) => {
-  const { admin_email, admin_pwd } = req.body;
-
+// Đăng nhập
+app.post('/api/signin', async (req, res) => {
+  const { email, password } = req.body;
   try {
-    const result = await pool.query('SELECT * FROM admin WHERE admin_email = $1', [admin_email]);
-
+    const result = await pool.query('SELECT * FROM admin WHERE admin_email = $1', [email]);
     if (result.rows.length === 0) {
-      return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+      return res.status(400).json({ success: false, message: 'Invalid email or password' });
     }
 
-    const admin = result.rows[0];
-    const isMatch = await bcrypt.compare(admin_pwd, admin.admin_pwd); // bcryptjs cũng hỗ trợ hàm compare
-
-    if (!isMatch) {
-      return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+    const user = result.rows[0];
+    const isValidPassword = await bcrypt.compare(password, user.admin_pwd);
+    if (!isValidPassword) {
+      return res.status(400).json({ success: false, message: 'Invalid email or password' });
     }
 
-    res.status(200).json({ status: 'success', message: 'Login successful', data: admin });
-  } catch (err) {
-    console.error('Error during login:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
+    const token = jwt.sign({ id: user.id }, secret, { expiresIn: '1h' });
+    res.status(200).json({ success: true, token });
+  } catch (error) {
+    console.error('Error signing in:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
-// Route để lấy dữ liệu từ bảng data
-app.get('/data', async (req, res) => {
+// Middleware để kiểm tra token JWT
+const authenticateToken = (req, res, next) => {
+  const token = req.headers['authorization'];
+  if (!token) return res.status(401).json({ success: false, message: 'Access denied' });
+
+  jwt.verify(token, secret, (err, user) => {
+    if (err) return res.status(403).json({ success: false, message: 'Invalid token' });
+    req.user = user;
+    next();
+  });
+};
+
+// Endpoint để lấy dữ liệu từ bảng data
+app.get('/api/data', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM data ORDER BY time DESC');
-    res.status(200).json({ status: 'success', data: result.rows });
-  } catch (err) {
-    console.error('Error fetching data:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
+    const result = await pool.query('SELECT * FROM data');
+    res.status(200).json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
-// Route để lấy cài đặt từ bảng setting
-app.get('/settings', async (req, res) => {
+// Endpoint để lấy dữ liệu từ bảng setting
+app.get('/api/setting', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM setting ORDER BY time DESC LIMIT 1');
-    res.status(200).json({ status: 'success', data: result.rows });
-  } catch (err) {
-    console.error('Error fetching settings:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
+    const result = await pool.query('SELECT * FROM setting');
+    res.status(200).json({ success: true, settings: result.rows });
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
-// Route để nhận dữ liệu từ ESP32 và lưu vào bảng data
-app.post('/data', async (req, res) => {
-  const { temp, humi, temp1, humi1, temp2, humi2, temp3, humi3, systemstatus } = req.body;
-
-  try {
-    const result = await pool.query(
-      'INSERT INTO data (temp, humi, temp1, humi1, temp2, humi2, temp3, humi3, systemstatus) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [temp, humi, temp1, humi1, temp2, humi2, temp3, humi3, systemstatus]
-    );
-    res.status(201).json({ status: 'success', data: result.rows[0] });
-  } catch (err) {
-    console.error('Error inserting data:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
-  }
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server is running on port ${process.env.PORT || 3000}`);
 });
-
-// Route để nhận dữ liệu cài đặt từ ESP32 và lưu vào bảng setting
-app.post('/settings', async (req, res) => {
-  const { settemp, sethumi } = req.body;
-
-  try {
-    const result = await pool.query(
-      'INSERT INTO setting (settemp, sethumi) VALUES ($1, $2) RETURNING *',
-      [settemp, sethumi]
-    );
-    res.status(201).json({ status: 'success', data: result.rows[0] });
-  } catch (err) {
-    console.error('Error inserting settings:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-module.exports = pool;
