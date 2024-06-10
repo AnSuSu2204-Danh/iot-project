@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs'); // Thay đổi từ 'bcrypt' sang 'bcryptjs'
 const cors = require('cors');
 const { Pool } = require('pg');
 require('dotenv').config();
@@ -29,7 +29,7 @@ pool.connect((err, client, done) => {
 // Route để đăng ký
 app.post('/register', async (req, res) => {
   const { admin_name, admin_email, admin_pwd } = req.body;
-  const hashedPassword = await bcrypt.hash(admin_pwd, 10);
+  const hashedPassword = await bcrypt.hash(admin_pwd, 10); // bcryptjs cũng hỗ trợ hàm hash
 
   try {
     const result = await pool.query(
@@ -55,7 +55,7 @@ app.post('/login', async (req, res) => {
     }
 
     const admin = result.rows[0];
-    const isMatch = await bcrypt.compare(admin_pwd, admin.admin_pwd);
+    const isMatch = await bcrypt.compare(admin_pwd, admin.admin_pwd); // bcryptjs cũng hỗ trợ hàm compare
 
     if (!isMatch) {
       return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
