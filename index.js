@@ -11,7 +11,7 @@ const pool = new Pool({
 
 app.use(express.json());
 
-const secret = 'your_jwt_secret'; // Thay đổi thành một chuỗi bí mật
+const secret = process.env.JWT_SECRET || 'default_jwt_secret'; // Thay đổi thành một chuỗi bí mật trong biến môi trường
 
 // Đăng ký
 app.post('/api/signup', async (req, res) => {
@@ -86,6 +86,7 @@ app.get('/api/setting', authenticateToken, async (req, res) => {
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server is running on port ${process.env.PORT || 3000}`);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
